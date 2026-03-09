@@ -139,7 +139,7 @@ export const YIELD_CHAINS: Record<
     name: "Optimism",
     usdc: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
     aavePool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
-    aToken: "0x38d693cE1dF5AaDF7bC62043aE5EF4e45a3d37Bd",
+    aToken: "0x38d693cE1dF5AaDF7bC62043aE5EF4e45a3d37BD",
     compoundComet: "0x2e44e174f7D53F0212823acC11C01A11d58c5bCB",
     rpcUrl: "https://opt-mainnet.g.alchemy.com/v2/JtggWORoKiMdZdf8W5fOD",
     txRpcUrl: "https://opt-mainnet.g.alchemy.com/v2/JtggWORoKiMdZdf8W5fOD",
@@ -163,5 +163,5 @@ export const DEFI_LLAMA_CHAIN_MAP: Record<number, string> = {
   137: "Polygon",
 };
 
-export const DEFAULT_YIELD_POLL_INTERVAL = 60_000; // 1 min
+export const DEFAULT_YIELD_POLL_INTERVAL = 30_000; // 30 sec
 export const MIN_APY_DIFF_TO_MOVE = 2.0; // 2% APY diff threshold

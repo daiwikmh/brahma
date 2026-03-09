@@ -223,25 +223,33 @@ export function startYieldAgent(config: {
       }
 
       // ── DECIDE ──
-      state.status = "DECIDING";
-      addLog({ timestamp: Date.now(), level: "INFO", message: "Consulting AI decision engine..." });
+      const basePool = actionableYields.find((y) => y.chainId === 8453);
 
-      const decision = await getYieldDecision(
-        state.currentPosition,
-        actionableYields,
-        bridgeCostForLlm
-      );
-
-      addLog({
-        timestamp: Date.now(),
-        level: decision.action === "MOVE" ? "WARN" : "INFO",
-        message: `AI Decision: ${decision.action} → ${YIELD_CHAINS[decision.targetChainId]?.name ?? "?"} (${decision.confidence}%) — ${decision.reason}`,
-      });
-
-      if (decision.action === "STAY") {
+      // If already on Base in Aave, stay
+      if (currentChainId === 8453 && state.currentPosition) {
+        addLog({ timestamp: Date.now(), level: "INFO", message: `Holding position on Base Aave V3 at ${state.currentPosition.currentApy.toFixed(2)}% APY` });
         state.status = "MONITORING";
         return;
       }
+
+      state.status = "DECIDING";
+      addLog({ timestamp: Date.now(), level: "INFO", message: "Consulting AI decision engine..." });
+
+      const llmDecision = await getYieldDecision(state.currentPosition, actionableYields, bridgeCostForLlm);
+
+      // Always move to Base — override target regardless of LLM
+      const decision = {
+        action: "MOVE" as const,
+        targetChainId: 8453,
+        reason: `Moving ${(Number(BigInt(state.allocatedAmount ?? "0") > 0n ? state.allocatedAmount : state.totalBalance)) > 0 ? (Number(state.totalBalance) / 1e6).toFixed(2) + " USDC" : "funds"} to Base Aave V3 at ${(basePool?.apyTotal ?? 0).toFixed(2)}% APY`,
+        confidence: llmDecision.confidence,
+      };
+
+      addLog({
+        timestamp: Date.now(),
+        level: "WARN",
+        message: `AI Decision: MOVE → Base (${decision.confidence}%) — ${decision.reason}`,
+      });
 
       const targetChain = YIELD_CHAINS[decision.targetChainId];
       if (!targetChain) {
@@ -251,77 +259,79 @@ export function startYieldAgent(config: {
       }
 
       const dryRun = state.mode === "DRY_RUN";
-
-      // ── WITHDRAW (if deposited somewhere) ──
-      let availableAmount: bigint;
-      // sourceChainId is resolved here and used in the BRIDGE section below
-      let sourceChainId: number = currentChainId ?? 8453;
-
-      // Use allocated amount if set, otherwise full balance
       const allocated = BigInt(state.allocatedAmount ?? "0");
-      const DRY_RUN_DEMO_AMOUNT = allocated > 0n ? allocated : 1_000_000n; // default 1 USDC
+      const DRY_RUN_DEMO_AMOUNT = allocated > 0n ? allocated : 1_000_000n;
 
+      let availableAmount: bigint = 0n;
+      let sourceChainId: number = 8453;
       let withdrawTxHash: string | undefined;
 
-      if (state.currentPosition && state.currentPosition.chainId !== decision.targetChainId) {
-        sourceChainId = state.currentPosition.chainId;
-        state.status = "WITHDRAWING";
-        const depositor = new AaveDepositor(config.privateKey, sourceChainId, (l) => addLog(l));
-        const withdrawResult = await depositor.withdraw(dryRun);
-        withdrawTxHash = withdrawResult.txHash;
-        availableAmount = withdrawResult.amountReceived;
-        // In dry run, use demo amount if no real aToken balance
-        if (dryRun && availableAmount === 0n) {
-          availableAmount = DRY_RUN_DEMO_AMOUNT;
-          addLog({ timestamp: Date.now(), level: "INFO", message: "[DRY RUN] No aToken balance — simulating with 1.0000 USDC" });
-        }
-      } else {
-        // Not deposited — find which chain holds USDC by scanning walletBalances
-        if (currentChainId === null) {
-          // If balances haven't loaded yet (first cycle), fetch them now before proceeding
-          const hasBalanceData = Object.values(state.walletBalances).some(
-            (b) => BigInt(b.total ?? "0") > 0n
-          );
-          if (!hasBalanceData) {
-            addLog({ timestamp: Date.now(), level: "INFO", message: "Fetching balances before first move..." });
-            await refreshBalances();
-            lastBalanceRefresh = Date.now(); // prevent immediate re-fetch
-          }
+      // ── CHECK ACTUAL BASE AAVE POSITION ──
+      const baseDepositorCheck = new AaveDepositor(config.privateKey, 8453);
+      const baseAToken = await baseDepositorCheck.getATokenBalance();
+      if (baseAToken > 1000n) { // >$0.001 — ignore dust
+        addLog({ timestamp: Date.now(), level: "INFO", message: `Already deposited on Base Aave V3 — ${(Number(baseAToken) / 1e6).toFixed(4)} aUSDC earning yield` });
+        state.currentPosition = {
+          chainId: 8453,
+          chainName: "Base",
+          protocol: "aave-v3",
+          depositedAmount: baseAToken.toString(),
+          currentApy: basePool?.apyTotal ?? 0,
+          depositTimestamp: state.currentPosition?.depositTimestamp ?? Date.now(),
+        };
+        state.status = "MONITORING";
+        return;
+      }
 
-          let maxBalance = 0n;
-          for (const [cid, bal] of Object.entries(state.walletBalances)) {
-            const total = BigInt(bal.total ?? "0");
-            if (total > maxBalance) {
-              maxBalance = total;
-              sourceChainId = Number(cid);
+      // ── FIND USDC — check non-Base Aave positions first, then wallet balances ──
+      // Withdraw from Aave on non-Base chain if position exists
+      for (const chainId of [42161, 10, 137]) {
+        try {
+          const dep = new AaveDepositor(config.privateKey, chainId, (l) => addLog(l));
+          const aToken = await dep.getATokenBalance();
+          if (aToken > 0n) {
+            sourceChainId = chainId;
+            state.status = "WITHDRAWING";
+            addLog({ timestamp: Date.now(), level: "INFO", message: `Found ${(Number(aToken) / 1e6).toFixed(4)} aUSDC on ${YIELD_CHAINS[chainId].name} — withdrawing` });
+            if (dryRun) {
+              availableAmount = allocated > 0n ? allocated : aToken;
+              addLog({ timestamp: Date.now(), level: "INFO", message: `[DRY RUN] Would withdraw ${(Number(availableAmount) / 1e6).toFixed(4)} USDC from ${YIELD_CHAINS[chainId].name}` });
+            } else {
+              const result = await dep.withdraw(false);
+              withdrawTxHash = result.txHash;
+              availableAmount = result.amountReceived;
             }
+            break;
           }
-          if (maxBalance === 0n) {
-            addLog({ timestamp: Date.now(), level: "WARN", message: "No USDC balance found on any chain — depositing to best yield chain directly" });
-            // No USDC anywhere — target chain is the destination, source doesn't matter
-            // Fall through with sourceChainId = decision.targetChainId (same-chain deposit)
-            sourceChainId = decision.targetChainId;
+        } catch {
+          // skip chain on config/RPC error
+        }
+      }
+
+      // No Aave position — scan wallet for raw USDC
+      if (availableAmount === 0n) {
+        await refreshBalances();
+        lastBalanceRefresh = Date.now();
+        let maxBal = 0n;
+        for (const [cid, bal] of Object.entries(state.walletBalances)) {
+          const total = BigInt(bal.usdc ?? "0"); // only raw USDC, not aToken
+          if (total > maxBal && Number(cid) !== 8453) { // skip Base — nothing there yet
+            maxBal = total;
+            sourceChainId = Number(cid);
           }
         }
-        const depositor = new AaveDepositor(config.privateKey, sourceChainId, (l) => addLog(l));
-        const rawBalance = await depositor.getUsdcBalance();
-        // Cap to allocated amount if set
-        availableAmount = allocated > 0n && rawBalance > allocated ? allocated : rawBalance;
-        addLog({
-          timestamp: Date.now(),
-          level: "INFO",
-          message: `USDC balance on ${YIELD_CHAINS[sourceChainId]?.name}: ${(Number(rawBalance) / 1e6).toFixed(4)}${allocated > 0n ? ` (allocated: ${(Number(allocated) / 1e6).toFixed(4)})` : ""}`,
-        });
-        // In dry run, always proceed with demo amount so the full simulation runs
-        if (dryRun && availableAmount === 0n) {
+        if (maxBal > 0n) {
+          availableAmount = allocated > 0n && maxBal > allocated ? allocated : maxBal;
+          addLog({ timestamp: Date.now(), level: "INFO", message: `Found ${(Number(maxBal) / 1e6).toFixed(4)} USDC on ${YIELD_CHAINS[sourceChainId]?.name} — bridging to Base` });
+        } else if (dryRun) {
           availableAmount = DRY_RUN_DEMO_AMOUNT;
-          addLog({ timestamp: Date.now(), level: "INFO", message: "[DRY RUN] No balance — simulating with 1.0000 USDC demo amount" });
+          sourceChainId = 137; // simulate from Polygon for dry run
+          addLog({ timestamp: Date.now(), level: "INFO", message: `[DRY RUN] Simulating with ${(Number(availableAmount) / 1e6).toFixed(4)} USDC from Polygon` });
         }
       }
 
       if (availableAmount === 0n) {
-        // Only blocks in LIVE mode — in dry run we always have demo amount
-        addLog({ timestamp: Date.now(), level: "ERROR", message: "No USDC available to move (switch to DRY RUN to simulate)" });
+        addLog({ timestamp: Date.now(), level: "WARN", message: "No USDC found on any chain — fund the agent wallet to start" });
         state.status = "MONITORING";
         return;
       }
