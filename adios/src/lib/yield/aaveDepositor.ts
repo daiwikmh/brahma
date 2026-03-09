@@ -119,6 +119,19 @@ export class AaveDepositor {
       return { simulated: true };
     }
 
+    // Check native gas balance before any tx
+    const nativeSymbols: Record<number, string> = { 137: "POL", 10: "ETH", 8453: "ETH", 42161: "ETH" };
+    const nativeSymbol = nativeSymbols[this.chainId] ?? "ETH";
+    try {
+      const gasBalance = await this.publicClient.getBalance({ address: this.address });
+      if (gasBalance === 0n) {
+        this.log("ERROR", `No ${nativeSymbol} for gas on ${config.name}. Fund ${this.address} with ${nativeSymbol} to execute live transactions.`);
+        return { simulated: false };
+      }
+    } catch {
+      // If balance check fails, proceed anyway — tx will fail with a clearer error
+    }
+
     // Approve USDC to Aave Pool
     const allowance = (await this.publicClient.readContract({
       address: config.usdc,

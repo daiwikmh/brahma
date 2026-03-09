@@ -1,9 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowRight, CheckCircle, XCircle } from "lucide-react";
 import type { YieldAgentState, YieldMoveResult } from "@/types";
 import { YIELD_CHAINS } from "@/lib/shared/config";
+
+const EXPLORER: Record<number, string> = {
+  8453: "https://basescan.org/tx/",
+  42161: "https://arbiscan.io/tx/",
+  10: "https://optimistic.etherscan.io/tx/",
+  137: "https://polygonscan.com/tx/",
+};
+
+function TxLink({ hash, chainId, label }: { hash: string; chainId: number; label: string }) {
+  const base = EXPLORER[chainId] ?? "https://etherscan.io/tx/";
+  return (
+    <a
+      href={`${base}${hash}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--neon-cyan)", textDecoration: "none", display: "block" }}
+    >
+      {label}: {hash.slice(0, 8)}...{hash.slice(-6)} ↗
+    </a>
+  );
+}
 
 function MoveRow({ m }: { m: YieldMoveResult }) {
   const from = YIELD_CHAINS[m.fromChain]?.name ?? "?";
@@ -11,12 +32,12 @@ function MoveRow({ m }: { m: YieldMoveResult }) {
 
   return (
     <div className={`move-row ${m.dryRun ? "dry-run" : ""}`}>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
         {m.success
-          ? <CheckCircle className="w-4 h-4" style={{ color: m.dryRun ? "var(--neon-pink)" : "var(--success)" }} />
-          : <XCircle className="w-4 h-4" style={{ color: "var(--danger)" }} />
+          ? <CheckCircle className="w-4 h-4 shrink-0" style={{ color: m.dryRun ? "var(--neon-pink)" : "var(--success)" }} />
+          : <XCircle className="w-4 h-4 shrink-0" style={{ color: "var(--danger)" }} />
         }
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div className="flex items-center gap-2">
             <span className="evac-chain">{from}</span>
             <ArrowRight className="w-3 h-3" style={{ color: "var(--neon-cyan)" }} />
@@ -30,9 +51,15 @@ function MoveRow({ m }: { m: YieldMoveResult }) {
           <p className="evac-meta">
             {m.bridgeRoute?.bridgeUsed ?? "same-chain"} | {m.newApy.toFixed(2)}% APY
           </p>
+          {!m.dryRun && (
+            <div className="mt-1 space-y-0.5">
+              {m.withdrawTxHash && <TxLink hash={m.withdrawTxHash} chainId={m.fromChain} label="Withdraw" />}
+              {m.depositTxHash && <TxLink hash={m.depositTxHash} chainId={m.toChain} label="Deposit" />}
+            </div>
+          )}
         </div>
       </div>
-      <div className="text-right">
+      <div className="text-right shrink-0">
         <p className="evac-time">{new Date(m.timestamp).toLocaleTimeString()}</p>
         <p style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--neon-cyan-dim)" }}>
           ${(Number(m.amountMoved) / 1e6).toFixed(4)}
@@ -50,10 +77,17 @@ function EmptyState({ label }: { label: string }) {
 }
 
 export default function YieldMoveHistory({ state }: { state: YieldAgentState }) {
+  const simMoves = state.simulatedMoves ?? state.moveHistory?.filter((m) => m.dryRun) ?? [];
+  const liveMoves = state.liveMoves ?? state.moveHistory?.filter((m) => !m.dryRun) ?? [];
+
   const [tab, setTab] = useState<"simulated" | "live">("simulated");
 
-  const simMoves = state.simulatedMoves ?? state.moveHistory.filter((m) => m.dryRun);
-  const liveMoves = state.liveMoves ?? state.moveHistory.filter((m) => !m.dryRun);
+  // Auto-switch to whichever tab has entries
+  useEffect(() => {
+    if (liveMoves.length > 0) setTab("live");
+    else if (simMoves.length > 0) setTab("simulated");
+  }, [liveMoves.length, simMoves.length]);
+
   const shown = tab === "simulated" ? simMoves : liveMoves;
 
   return (

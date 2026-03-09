@@ -9,9 +9,9 @@ export const wagmiConfig = createConfig({
   multiInjectedProviderDiscovery: false, // Only MetaMask — no Keplr, Talisman, etc.
   transports: {
     [mainnet.id]: http(),
-    [base.id]: http("https://base-mainnet.g.alchemy.com/v2/t7Oxw5b_OpDL6yQVWN70ZjxO6hTCaZeW"),
-    [arbitrum.id]: http("https://arb-mainnet.g.alchemy.com/v2/t7Oxw5b_OpDL6yQVWN70ZjxO6hTCaZeW"),
-    [optimism.id]: http("https://opt-mainnet.g.alchemy.com/v2/t7Oxw5b_OpDL6yQVWN70ZjxO6hTCaZeW"),
-    [polygon.id]: http("https://polygon-mainnet.g.alchemy.com/v2/t7Oxw5b_OpDL6yQVWN70ZjxO6hTCaZeW"),
+    [base.id]: http("https://base-mainnet.g.alchemy.com/v2/JtggWORoKiMdZdf8W5fOD"),
+    [arbitrum.id]: http("https://arb-mainnet.g.alchemy.com/v2/JtggWORoKiMdZdf8W5fOD"),
+    [optimism.id]: http("https://opt-mainnet.g.alchemy.com/v2/JtggWORoKiMdZdf8W5fOD"),
+    [polygon.id]: http("https://polygon-mainnet.g.alchemy.com/v2/JtggWORoKiMdZdf8W5fOD"),
   },
 });

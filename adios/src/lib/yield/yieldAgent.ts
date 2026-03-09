@@ -200,17 +200,7 @@ export function startYieldAgent(config: {
       const currentApy = state.currentPosition?.currentApy ?? 0;
       const currentChainId = state.currentPosition?.chainId ?? null;
 
-      if (!shouldMove(currentChainId, best, currentApy, MIN_APY_DIFF_TO_MOVE)) {
-        addLog({
-          timestamp: Date.now(),
-          level: "INFO",
-          message: state.currentPosition
-            ? `Staying on ${state.currentPosition.chainName} — yield competitive`
-            : "No better opportunity found",
-        });
-        state.status = "MONITORING";
-        return;
-      }
+      // Always consult LLM — it decides whether to move even below the threshold
 
       // ── GET REAL BRIDGE QUOTE for LLM context ──
       // Lightweight fetchQuoteCost — no eth_call, just getQuote for cost data
@@ -271,11 +261,14 @@ export function startYieldAgent(config: {
       const allocated = BigInt(state.allocatedAmount ?? "0");
       const DRY_RUN_DEMO_AMOUNT = allocated > 0n ? allocated : 1_000_000n; // default 1 USDC
 
+      let withdrawTxHash: string | undefined;
+
       if (state.currentPosition && state.currentPosition.chainId !== decision.targetChainId) {
         sourceChainId = state.currentPosition.chainId;
         state.status = "WITHDRAWING";
         const depositor = new AaveDepositor(config.privateKey, sourceChainId, (l) => addLog(l));
         const withdrawResult = await depositor.withdraw(dryRun);
+        withdrawTxHash = withdrawResult.txHash;
         availableAmount = withdrawResult.amountReceived;
         // In dry run, use demo amount if no real aToken balance
         if (dryRun && availableAmount === 0n) {
@@ -390,17 +383,23 @@ export function startYieldAgent(config: {
       }
 
       if (depositAmount > 0n) {
-        const depositResult = await targetDepositor.deposit(depositAmount, dryRun);
-
-        state.currentPosition = {
-          chainId: decision.targetChainId,
-          chainName: targetChain.name,
-          protocol: "aave-v3",
-          depositedAmount: depositAmount.toString(),
-          currentApy: best.apyTotal,
-          depositTxHash: depositResult.txHash,
-          depositTimestamp: Date.now(),
-        };
+        try {
+          const depositResult = await targetDepositor.deposit(depositAmount, dryRun);
+          if (depositResult.txHash || depositResult.simulated) {
+            state.currentPosition = {
+              chainId: decision.targetChainId,
+              chainName: targetChain.name,
+              protocol: "aave-v3",
+              depositedAmount: depositAmount.toString(),
+              currentApy: best.apyTotal,
+              depositTxHash: depositResult.txHash,
+              depositTimestamp: Date.now(),
+            };
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          addLog({ timestamp: Date.now(), level: "ERROR", message: `Deposit failed: ${msg.slice(0, 120)}` });
+        }
       }
 
       // ── RECORD ──
@@ -411,6 +410,7 @@ export function startYieldAgent(config: {
         toChain: decision.targetChainId,
         amountMoved: availableAmount.toString(),
         bridgeRoute,
+        withdrawTxHash,
         depositTxHash: state.currentPosition?.depositTxHash,
         newApy: best.apyTotal,
         timestamp: Date.now(),
@@ -432,7 +432,7 @@ export function startYieldAgent(config: {
       state.status = "MONITORING";
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      addLog({ timestamp: Date.now(), level: "ERROR", message: `Cycle failed: ${message}` });
+      addLog({ timestamp: Date.now(), level: "ERROR", message: message.slice(0, 200) });
       state.status = "MONITORING";
     }
   };

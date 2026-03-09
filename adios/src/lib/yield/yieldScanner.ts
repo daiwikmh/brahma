@@ -96,10 +96,39 @@ export async function scanYields(): Promise<YieldPool[]> {
   return pools;
 }
 
+const CHAIN_PREFERENCE: Record<number, number> = {
+  8453: 0,   // Base — preferred
+  42161: 1,  // Arbitrum
+  10: 2,     // Optimism
+  137: 3,    // Polygon — least preferred (POL gas, bridging friction)
+};
+
+const POLYGON_BASE_APY_TOLERANCE = 2.0; // Accept Base even if up to 2% lower APY than Polygon
+
 export function getBestYield(pools: YieldPool[]): YieldPool | null {
-  // Agent only moves to actionable pools
   const actionable = pools.filter((p) => p.actionable);
-  return actionable.length > 0 ? actionable[0] : null;
+  if (actionable.length === 0) return null;
+
+  // Sort by APY desc first
+  actionable.sort((a, b) => b.apyTotal - a.apyTotal);
+  const top = actionable[0];
+
+  // If top yield is on Polygon, check if Base is within 2% — prefer Base if so
+  if (top.chainId === 137) {
+    const base = actionable.find((p) => p.chainId === 8453);
+    if (base && top.apyTotal - base.apyTotal <= POLYGON_BASE_APY_TOLERANCE) {
+      return base;
+    }
+  }
+
+  // On equal APY, prefer by chain preference order
+  actionable.sort((a, b) => {
+    const apyDiff = b.apyTotal - a.apyTotal;
+    if (Math.abs(apyDiff) > 0.01) return apyDiff;
+    return (CHAIN_PREFERENCE[a.chainId] ?? 99) - (CHAIN_PREFERENCE[b.chainId] ?? 99);
+  });
+
+  return actionable[0];
 }
 
 export function shouldMove(
@@ -110,5 +139,7 @@ export function shouldMove(
 ): boolean {
   if (currentChainId === null) return true; // not deposited anywhere
   if (best.chainId === currentChainId) return false; // already on best chain
+  // Always move away from Polygon if a preferred chain has equal or better APY
+  if (currentChainId === 137 && (CHAIN_PREFERENCE[best.chainId] ?? 99) < (CHAIN_PREFERENCE[137])) return true;
   return best.apyTotal - currentApy >= minDiff;
 }
