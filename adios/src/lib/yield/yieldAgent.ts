@@ -212,6 +212,26 @@ export function startYieldAgent(config: {
         return;
       }
 
+      // ── GET REAL BRIDGE QUOTE for LLM context ──
+      // Lightweight fetchQuoteCost — no eth_call, just getQuote for cost data
+      let bridgeCostForLlm = "unknown";
+      if (currentChainId !== null && currentChainId !== best.chainId) {
+        try {
+          const stateAlloc = BigInt(state.allocatedAmount ?? "0");
+          const stateTotal = BigInt(state.totalBalance ?? "0");
+          const quoteAmount = stateAlloc > 0n ? stateAlloc : stateTotal > 0n ? stateTotal : BigInt(1_000_000);
+          const preQuote = await bridge.fetchQuoteCost(currentChainId, best.chainId, quoteAmount);
+          bridgeCostForLlm = `$${preQuote.bridgeCostUsdc.toFixed(4)} USDC via ${preQuote.bridgeName}`;
+          addLog({
+            timestamp: Date.now(),
+            level: "INFO",
+            message: `Bridge cost estimate: ${bridgeCostForLlm}`,
+          });
+        } catch {
+          addLog({ timestamp: Date.now(), level: "WARN", message: "Could not fetch bridge quote — LLM will decide without cost data" });
+        }
+      }
+
       // ── DECIDE ──
       state.status = "DECIDING";
       addLog({ timestamp: Date.now(), level: "INFO", message: "Consulting AI decision engine..." });
@@ -219,7 +239,7 @@ export function startYieldAgent(config: {
       const decision = await getYieldDecision(
         state.currentPosition,
         actionableYields,
-        "~$0.05"
+        bridgeCostForLlm
       );
 
       addLog({
@@ -244,14 +264,17 @@ export function startYieldAgent(config: {
 
       // ── WITHDRAW (if deposited somewhere) ──
       let availableAmount: bigint;
+      // sourceChainId is resolved here and used in the BRIDGE section below
+      let sourceChainId: number = currentChainId ?? 8453;
 
       // Use allocated amount if set, otherwise full balance
       const allocated = BigInt(state.allocatedAmount ?? "0");
       const DRY_RUN_DEMO_AMOUNT = allocated > 0n ? allocated : 1_000_000n; // default 1 USDC
 
       if (state.currentPosition && state.currentPosition.chainId !== decision.targetChainId) {
+        sourceChainId = state.currentPosition.chainId;
         state.status = "WITHDRAWING";
-        const depositor = new AaveDepositor(config.privateKey, state.currentPosition.chainId, (l) => addLog(l));
+        const depositor = new AaveDepositor(config.privateKey, sourceChainId, (l) => addLog(l));
         const withdrawResult = await depositor.withdraw(dryRun);
         availableAmount = withdrawResult.amountReceived;
         // In dry run, use demo amount if no real aToken balance
@@ -260,8 +283,33 @@ export function startYieldAgent(config: {
           addLog({ timestamp: Date.now(), level: "INFO", message: "[DRY RUN] No aToken balance — simulating with 1.0000 USDC" });
         }
       } else {
-        // Not deposited — check USDC balance on source chain
-        const sourceChainId = state.currentPosition?.chainId ?? 8453;
+        // Not deposited — find which chain holds USDC by scanning walletBalances
+        if (currentChainId === null) {
+          // If balances haven't loaded yet (first cycle), fetch them now before proceeding
+          const hasBalanceData = Object.values(state.walletBalances).some(
+            (b) => BigInt(b.total ?? "0") > 0n
+          );
+          if (!hasBalanceData) {
+            addLog({ timestamp: Date.now(), level: "INFO", message: "Fetching balances before first move..." });
+            await refreshBalances();
+            lastBalanceRefresh = Date.now(); // prevent immediate re-fetch
+          }
+
+          let maxBalance = 0n;
+          for (const [cid, bal] of Object.entries(state.walletBalances)) {
+            const total = BigInt(bal.total ?? "0");
+            if (total > maxBalance) {
+              maxBalance = total;
+              sourceChainId = Number(cid);
+            }
+          }
+          if (maxBalance === 0n) {
+            addLog({ timestamp: Date.now(), level: "WARN", message: "No USDC balance found on any chain — depositing to best yield chain directly" });
+            // No USDC anywhere — target chain is the destination, source doesn't matter
+            // Fall through with sourceChainId = decision.targetChainId (same-chain deposit)
+            sourceChainId = decision.targetChainId;
+          }
+        }
         const depositor = new AaveDepositor(config.privateKey, sourceChainId, (l) => addLog(l));
         const rawBalance = await depositor.getUsdcBalance();
         // Cap to allocated amount if set
@@ -286,18 +334,19 @@ export function startYieldAgent(config: {
       }
 
       // ── BRIDGE (if cross-chain) ──
-      const fromChainId = state.currentPosition?.chainId ?? 8453;
+      // fromChainId is resolved from currentPosition or walletBalances — never a hardcoded fallback
+      const fromChainId = state.currentPosition?.chainId ?? sourceChainId;
       let bridgeRoute;
 
       if (fromChainId !== decision.targetChainId) {
         state.status = "BRIDGING";
 
         if (dryRun) {
-          const quote = await bridge.getQuote(fromChainId, decision.targetChainId, availableAmount);
+          const quote = await bridge.getDryRunQuote(fromChainId, decision.targetChainId, availableAmount);
           addLog({
             timestamp: Date.now(),
             level: "SUCCESS",
-            message: `[DRY RUN] Would bridge via ${quote.bridgeName} — est. output: ${(Number(quote.estimatedOutput) / 1e6).toFixed(4)} USDC`,
+            message: `[DRY RUN] Would bridge via ${quote.bridgeName} — est. output: ${(Number(quote.estimatedOutput) / 1e6).toFixed(4)} USDC | fee: ${quote.bridgeCostUsdc.toFixed(4)} USDC`,
           });
           bridgeRoute = {
             fromChainId,
@@ -318,10 +367,27 @@ export function startYieldAgent(config: {
       state.status = "DEPOSITING";
       const targetDepositor = new AaveDepositor(config.privateKey, decision.targetChainId, (l) => addLog(l));
 
-      // After bridge, check balance on target chain
-      const depositAmount = dryRun
-        ? availableAmount
-        : await targetDepositor.getUsdcBalance();
+      let depositAmount: bigint;
+      if (dryRun) {
+        depositAmount = availableAmount;
+      } else {
+        // Verify USDC actually arrived on target chain after bridge
+        depositAmount = await targetDepositor.getUsdcBalance();
+        if (depositAmount === 0n) {
+          addLog({
+            timestamp: Date.now(),
+            level: "ERROR",
+            message: `Bridge completed but no USDC found on ${targetChain.name} — aborting deposit. Check bridge tx manually.`,
+          });
+          state.status = "MONITORING";
+          return;
+        }
+        addLog({
+          timestamp: Date.now(),
+          level: "SUCCESS",
+          message: `Confirmed ${(Number(depositAmount) / 1e6).toFixed(4)} USDC arrived on ${targetChain.name}`,
+        });
+      }
 
       if (depositAmount > 0n) {
         const depositResult = await targetDepositor.deposit(depositAmount, dryRun);
@@ -329,7 +395,7 @@ export function startYieldAgent(config: {
         state.currentPosition = {
           chainId: decision.targetChainId,
           chainName: targetChain.name,
-          aavePool: targetChain.aavePool,
+          protocol: "aave-v3",
           depositedAmount: depositAmount.toString(),
           currentApy: best.apyTotal,
           depositTxHash: depositResult.txHash,

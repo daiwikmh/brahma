@@ -107,6 +107,9 @@ export const YIELD_CHAINS: Record<
     usdc: `0x${string}`;
     aavePool: `0x${string}`;
     aToken: `0x${string}`;
+    // Compound V3 Comet USDC market address
+    // Source: https://github.com/compound-finance/comet/tree/main/deployments
+    compoundComet: `0x${string}`;
     rpcUrl: string;    // public RPC — for reads, balance checks, dry-run simulations
     txRpcUrl: string;  // Alchemy — for writes (approve, supply, withdraw, bridge)
   }
@@ -117,6 +120,7 @@ export const YIELD_CHAINS: Record<
     usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     aavePool: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
     aToken: "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB",
+    compoundComet: "0xb125E6687d4313864e53df431d5425969c15Eb2F",
     rpcUrl: "https://mainnet.base.org",
     txRpcUrl: "https://base-mainnet.g.alchemy.com/v2/t7Oxw5b_OpDL6yQVWN70ZjxO6hTCaZeW",
   },
@@ -126,6 +130,7 @@ export const YIELD_CHAINS: Record<
     usdc: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
     aavePool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
     aToken: "0x724dc807b04555b71ed48a6896b6F41593b8C637",
+    compoundComet: "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
     rpcUrl: "https://arb1.arbitrum.io/rpc",
     txRpcUrl: "https://arb-mainnet.g.alchemy.com/v2/t7Oxw5b_OpDL6yQVWN70ZjxO6hTCaZeW",
   },
@@ -135,6 +140,7 @@ export const YIELD_CHAINS: Record<
     usdc: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
     aavePool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
     aToken: "0x38d693cE1dF5AaDF7bC62043aE5EF4e45a3d37Bd",
+    compoundComet: "0x2e44e174f7D53F0212823acC11C01A11d58c5bCB",
     rpcUrl: "https://mainnet.optimism.io",
     txRpcUrl: "https://opt-mainnet.g.alchemy.com/v2/t7Oxw5b_OpDL6yQVWN70ZjxO6hTCaZeW",
   },
@@ -144,6 +150,7 @@ export const YIELD_CHAINS: Record<
     usdc: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
     aavePool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
     aToken: "0xA4D94019934D8333Ef880ABFFbF2FDd611C762BD",
+    compoundComet: "0xF25212E676D1F7F89Cd72fFEe66158f541246445",
     rpcUrl: "https://polygon-rpc.com",
     txRpcUrl: "https://polygon-mainnet.g.alchemy.com/v2/t7Oxw5b_OpDL6yQVWN70ZjxO6hTCaZeW",
   },

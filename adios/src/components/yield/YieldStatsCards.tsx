@@ -27,13 +27,6 @@ export default function YieldStatsCards({ state }: { state: YieldAgentState }) {
 
   const stats = [
     {
-      label: "Status",
-      value: state.status,
-      sub: isDryRun ? "simulation" : "live",
-      color: statusClass,
-      glow: state.status === "SCANNING" ? "glow-neon" : "",
-    },
-    {
       label: "Total Balance",
       value: totalUsd > 0 ? `$${totalUsd.toFixed(4)}` : "—",
       sub: "USDC across chains",

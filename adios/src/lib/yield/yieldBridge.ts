@@ -1,3 +1,16 @@
+// LI.FI bridge for cross-chain USDC transfers
+//
+// Quote + execution flow (LI.FI SDK v3):
+//   getQuote(params)          → LiFiStep (transactionRequest already populated)
+//   convertQuoteToRoute(step) → Route
+//   executeRoute(route, hooks)→ execute on-chain
+//
+// Two quoting methods:
+//   fetchQuoteCost()   — lightweight: getQuote only, returns cost for LLM pre-decision
+//   getDryRunQuote()   — full dry-run: getQuote + eth_call simulation
+//
+// Source: https://docs.li.fi/llms.txt
+
 import {
   createPublicClient,
   http,
@@ -5,7 +18,7 @@ import {
   type PublicClient,
 } from "viem";
 import { base, arbitrum, optimism, polygon } from "viem/chains";
-import { getRoutes, executeRoute, getStepTransaction } from "@lifi/sdk";
+import { getQuote, executeRoute, convertQuoteToRoute } from "@lifi/sdk";
 import { initLiFi } from "../shared/lifiClient";
 import { YIELD_CHAINS } from "../shared/config";
 import { ERC20_ABI } from "../abi/aaveV3Pool";
@@ -19,6 +32,7 @@ const CHAIN_MAP: Record<number, Chain> = {
 };
 
 export class YieldBridge {
+  private privateKey: string;
   private address: `0x${string}`;
   private onLog: (log: Omit<LogEntry, "id">) => void;
 
@@ -27,9 +41,10 @@ export class YieldBridge {
     address: string,
     onLog?: (log: Omit<LogEntry, "id">) => void
   ) {
-    initLiFi(privateKey, 8453);
+    this.privateKey = privateKey;
     this.address = address as `0x${string}`;
     this.onLog = onLog ?? (() => {});
+    // Do not init here — init per-operation with the correct source chain
   }
 
   private log(level: LogEntry["level"], message: string) {
@@ -46,10 +61,10 @@ export class YieldBridge {
   }
 
   /**
-   * Dry run — get routes, then simulate the actual bridge transaction
-   * on-chain via eth_call. No broadcast, real state validation.
+   * Lightweight quote — getQuote only, no eth_call.
+   * Use this before the LLM decision to get real bridge cost.
    */
-  async getQuote(
+  async fetchQuoteCost(
     fromChainId: number,
     toChainId: number,
     amount: bigint
@@ -57,44 +72,86 @@ export class YieldBridge {
     estimatedOutput: string;
     bridgeName: string;
     estimatedTime: number;
+    bridgeCostUsdc: number;
   }> {
     const from = YIELD_CHAINS[fromChainId];
     const to = YIELD_CHAINS[toChainId];
-    if (!from || !to) throw new Error("Unsupported chain pair");
+    if (!from || !to) throw new Error(`Unsupported chain pair: ${fromChainId} → ${toChainId}`);
+
+    // Ensure SDK is initialized before any API call
+    initLiFi(this.privateKey, fromChainId);
+
+    const step = await getQuote({
+      fromChain: fromChainId,
+      toChain: toChainId,
+      fromToken: from.usdc,
+      toToken: to.usdc,
+      fromAmount: amount.toString(),
+      fromAddress: this.address,
+      integrator: process.env.LIFI_INTEGRATOR ?? "adios",
+      slippage: 0.005, // 0.5% — tight for stablecoin-to-stablecoin
+    });
+
+    const estimatedOutput = step.estimate?.toAmount ?? "0";
+    const bridgeName = step.toolDetails?.name ?? "aggregated";
+    const estimatedTime = step.estimate?.executionDuration ?? 60;
+    const bridgeCostUsdc = (Number(amount) - Number(estimatedOutput)) / 1e6;
+
+    return { estimatedOutput, bridgeName, estimatedTime, bridgeCostUsdc };
+  }
+
+  /**
+   * Full dry-run — getQuote + eth_call simulation of the bridge tx.
+   * Use this in DRY_RUN mode for the actual bridge step validation.
+   */
+  async getDryRunQuote(
+    fromChainId: number,
+    toChainId: number,
+    amount: bigint
+  ): Promise<{
+    estimatedOutput: string;
+    bridgeName: string;
+    estimatedTime: number;
+    bridgeCostUsdc: number;
+  }> {
+    const from = YIELD_CHAINS[fromChainId];
+    const to = YIELD_CHAINS[toChainId];
+    if (!from || !to) throw new Error(`Unsupported chain pair: ${fromChainId} → ${toChainId}`);
+
+    // Ensure SDK is initialized
+    initLiFi(this.privateKey, fromChainId);
 
     this.log(
       "INFO",
       `[DRY RUN] Quoting LI.FI: ${from.name} → ${to.name} | ${(Number(amount) / 1e6).toFixed(4)} USDC`
     );
 
-    const routesRes = await getRoutes({
-      fromChainId,
-      toChainId,
-      fromTokenAddress: from.usdc,
-      toTokenAddress: to.usdc,
+    const step = await getQuote({
+      fromChain: fromChainId,
+      toChain: toChainId,
+      fromToken: from.usdc,
+      toToken: to.usdc,
       fromAmount: amount.toString(),
       fromAddress: this.address,
+      integrator: process.env.LIFI_INTEGRATOR ?? "adios",
+      slippage: 0.005,
     });
 
-    const route = routesRes.routes[0];
-    if (!route) throw new Error("LI.FI found no routes");
-
-    const step = route.steps[0];
-    const bridgeName = step?.toolDetails?.name ?? "aggregated";
+    const bridgeName = step.toolDetails?.name ?? "aggregated";
+    const estimatedOutput = step.estimate?.toAmount ?? "0";
+    const estimatedTime = step.estimate?.executionDuration ?? 60;
+    const bridgeCostUsdc = (Number(amount) - Number(estimatedOutput)) / 1e6;
 
     this.log(
       "INFO",
-      `[DRY RUN] Route via ${bridgeName} — simulating onchain...`
+      `[DRY RUN] Route via ${bridgeName} | est. out: ${(Number(estimatedOutput) / 1e6).toFixed(4)} USDC | fee: ${bridgeCostUsdc.toFixed(4)} USDC`
     );
 
-    // Enrich step with actual transaction request (calldata + target contract)
-    const enrichedStep = await getStepTransaction(step);
-    const txReq = enrichedStep.transactionRequest;
+    const txReq = step.transactionRequest;
 
     if (txReq?.to && txReq?.data) {
       const client = this.publicClient(fromChainId);
 
-      // 1. Simulate ERC20 approve (bridge contract needs allowance)
       try {
         await client.simulateContract({
           address: from.usdc,
@@ -109,7 +166,6 @@ export class YieldBridge {
         this.log("WARN", `[DRY RUN] Approval sim note: ${msg.slice(0, 80)}`);
       }
 
-      // 2. Simulate the actual bridge call via eth_call
       try {
         await client.call({
           account: this.address,
@@ -117,32 +173,25 @@ export class YieldBridge {
           data: txReq.data as `0x${string}`,
           value: txReq.value ? BigInt(txReq.value.toString()) : 0n,
         });
-        this.log(
-          "SUCCESS",
-          `[DRY RUN] Bridge tx simulation passed — est. output: ${(Number(route.toAmount) / 1e6).toFixed(4)} USDC`
-        );
+        this.log("SUCCESS", `[DRY RUN] Bridge tx simulation passed`);
       } catch (e) {
-        // eth_call failures on bridge contracts are common (slippage guards, liquidity checks)
-        // log it but don't throw — we still have the quote
         const msg = e instanceof Error ? e.message : String(e);
         this.log(
           "WARN",
-          `[DRY RUN] Bridge sim revert (expected for approval-gated calls): ${msg.slice(0, 100)}`
+          `[DRY RUN] Bridge sim revert (expected — approval-gated): ${msg.slice(0, 100)}`
         );
       }
     } else {
-      this.log("INFO", `[DRY RUN] No tx request in step — skipping eth_call sim`);
+      this.log("WARN", `[DRY RUN] Quote returned no transactionRequest — skipping eth_call`);
     }
 
-    return {
-      estimatedOutput: route.toAmount ?? "0",
-      bridgeName,
-      estimatedTime: step?.estimate?.executionDuration ?? 60,
-    };
+    return { estimatedOutput, bridgeName, estimatedTime, bridgeCostUsdc };
   }
 
   /**
-   * Live — bridge USDC cross-chain via LI.FI.
+   * Live bridge — getQuote → convertQuoteToRoute → executeRoute.
+   * initLiFi is called with the actual fromChainId so the wallet client
+   * is on the correct source chain from the start.
    */
   async executeBridge(
     fromChainId: number,
@@ -151,28 +200,41 @@ export class YieldBridge {
   ): Promise<BridgeRoute> {
     const from = YIELD_CHAINS[fromChainId];
     const to = YIELD_CHAINS[toChainId];
-    if (!from || !to) throw new Error("Unsupported chain pair");
+    if (!from || !to) throw new Error(`Unsupported chain pair: ${fromChainId} → ${toChainId}`);
+
+    // Init with source chain — ensures wallet client is on the right chain
+    initLiFi(this.privateKey, fromChainId);
 
     this.log(
       "INFO",
       `Bridging ${(Number(amount) / 1e6).toFixed(4)} USDC: ${from.name} → ${to.name} via LI.FI`
     );
 
-    const routesRes = await getRoutes({
-      fromChainId,
-      toChainId,
-      fromTokenAddress: from.usdc,
-      toTokenAddress: to.usdc,
+    const step = await getQuote({
+      fromChain: fromChainId,
+      toChain: toChainId,
+      fromToken: from.usdc,
+      toToken: to.usdc,
       fromAmount: amount.toString(),
       fromAddress: this.address,
+      integrator: process.env.LIFI_INTEGRATOR ?? "adios",
+      slippage: 0.005, // 0.5% — tight for stablecoin-to-stablecoin
     });
 
-    const route = routesRes.routes[0];
-    if (!route) throw new Error("LI.FI found no routes");
+    const bridgeName = step.toolDetails?.name ?? "aggregated";
+    const estimatedOutput = step.estimate?.toAmount ?? "0";
 
-    const step = route.steps[0];
-    const bridgeName = step?.toolDetails?.name ?? "aggregated";
-    this.log("SUCCESS", `LI.FI route via ${bridgeName}`);
+    if (!step.transactionRequest?.to) {
+      throw new Error(`LI.FI quote returned no transactionRequest — aborting bridge`);
+    }
+
+    this.log(
+      "SUCCESS",
+      `LI.FI quote via ${bridgeName} — est. out: ${(Number(estimatedOutput) / 1e6).toFixed(4)} USDC | min: ${(Number(step.estimate?.toAmountMin ?? "0") / 1e6).toFixed(4)} USDC`
+    );
+
+    // convertQuoteToRoute wraps LiFiStep into a Route for executeRoute
+    const route = convertQuoteToRoute(step);
 
     const start = Date.now();
 
@@ -194,7 +256,7 @@ export class YieldBridge {
       fromToken: from.usdc,
       toToken: to.usdc,
       fromAmount: amount.toString(),
-      estimatedOutput: route.toAmount ?? "0",
+      estimatedOutput,
       bridgeUsed: bridgeName,
       executionTime: elapsed,
     };

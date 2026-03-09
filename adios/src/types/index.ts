@@ -94,10 +94,12 @@ export interface YieldPool {
   actionable: boolean; // true = agent can deposit here (Aave V3)
 }
 
+export type YieldProtocol = "aave-v3" | "compound-v3";
+
 export interface YieldPosition {
   chainId: number;
   chainName: string;
-  aavePool: string;
+  protocol: YieldProtocol;
   depositedAmount: string;
   currentApy: number;
   depositTxHash?: string;

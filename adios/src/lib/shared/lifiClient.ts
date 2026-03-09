@@ -12,18 +12,21 @@ const CHAIN_MAP: Record<number, Chain> = {
   137: polygon,
 };
 
-let initialized = false;
+// Track both key and source chain — re-init if either changes
+let configuredKey: string | null = null;
+let configuredChainId: number | null = null;
 
-export function initLiFi(privateKey: string, defaultChainId: number) {
-  if (initialized) return;
+export function initLiFi(privateKey: string, sourceChainId: number) {
+  const normalizedKey = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
 
-  const account = privateKeyToAccount(
-    (privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`) as `0x${string}`
-  );
+  // Skip if same key AND same source chain
+  if (configuredKey === normalizedKey && configuredChainId === sourceChainId) return;
 
-  const chain = CHAIN_MAP[defaultChainId] ?? base;
-  // Use Alchemy txRpcUrl for the default chain, fall back to public
-  const defaultTxRpc = YIELD_CHAINS[defaultChainId]?.txRpcUrl;
+  const account = privateKeyToAccount(normalizedKey as `0x${string}`);
+  const sourceChain = CHAIN_MAP[sourceChainId];
+  if (!sourceChain) throw new Error(`initLiFi: unsupported source chain ${sourceChainId}`);
+  const sourceTxRpc = YIELD_CHAINS[sourceChainId]?.txRpcUrl;
+  if (!sourceTxRpc) throw new Error(`initLiFi: no txRpcUrl for chain ${sourceChainId}`);
 
   createConfig({
     integrator: process.env.LIFI_INTEGRATOR || "adios",
@@ -32,14 +35,14 @@ export function initLiFi(privateKey: string, defaultChainId: number) {
         getWalletClient: async () =>
           createWalletClient({
             account,
-            chain,
-            transport: http(defaultTxRpc), // Alchemy for tx submission
+            chain: sourceChain,
+            transport: http(sourceTxRpc),
           }),
         switchChain: async (targetChainId: number) => {
           const targetChain = CHAIN_MAP[targetChainId];
-          if (!targetChain) throw new Error(`Unsupported chain: ${targetChainId}`);
-          // Use Alchemy txRpcUrl for target chain if available
+          if (!targetChain) throw new Error(`LI.FI switchChain: unsupported chain ${targetChainId}`);
           const txRpc = YIELD_CHAINS[targetChainId]?.txRpcUrl;
+          if (!txRpc) throw new Error(`LI.FI switchChain: no txRpcUrl for chain ${targetChainId}`);
           return createWalletClient({
             account,
             chain: targetChain,
@@ -50,5 +53,6 @@ export function initLiFi(privateKey: string, defaultChainId: number) {
     ],
   });
 
-  initialized = true;
+  configuredKey = normalizedKey;
+  configuredChainId = sourceChainId;
 }

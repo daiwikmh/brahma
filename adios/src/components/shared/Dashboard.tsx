@@ -75,31 +75,34 @@ export default function Dashboard() {
     []
   );
 
-  // Poll guardian state
+  // Poll only the active mode, pause when tab is hidden
   useEffect(() => {
-    const poll = async () => {
-      try {
-        const res = await fetch("/api/agent");
-        if (res.ok) setGuardianState(await res.json());
-      } catch { /* silent */ }
-    };
-    poll();
-    const interval = setInterval(poll, 2000);
-    return () => clearInterval(interval);
-  }, []);
+    let interval: ReturnType<typeof setInterval> | null = null;
 
-  // Poll yield state
-  useEffect(() => {
+    const endpoint = mode === "yield" ? "/api/yield-agent" : "/api/agent";
+    const setter = mode === "yield" ? setYieldState : setGuardianState;
+
     const poll = async () => {
+      if (document.hidden) return;
       try {
-        const res = await fetch("/api/yield-agent");
-        if (res.ok) setYieldState(await res.json());
+        const res = await fetch(endpoint);
+        if (res.ok) setter(await res.json());
       } catch { /* silent */ }
     };
+
     poll();
-    const interval = setInterval(poll, 2000);
-    return () => clearInterval(interval);
-  }, []);
+    interval = setInterval(poll, 2000);
+
+    const onVisibility = () => {
+      if (!document.hidden) poll();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [mode]);
 
   const handleGuardianAction = useCallback(
     async (action: string, data?: Record<string, unknown>) => {
