@@ -196,11 +196,33 @@ export function startYieldAgent(config: {
         });
       }
 
+      // ── DETECT ACTUAL ON-CHAIN AAVE POSITION ──
+      // If currentPosition is unset or stale, scan all chains for real aToken balance
+      if (!state.currentPosition) {
+        for (const chainId of Object.keys(YIELD_CHAINS).map(Number)) {
+          try {
+            const dep = new AaveDepositor(config.privateKey, chainId);
+            const aToken = await dep.getATokenBalance();
+            if (aToken > 1000n) { // >$0.001 — ignore dust
+              const pool = actionableYields.find((y) => y.chainId === chainId);
+              state.currentPosition = {
+                chainId,
+                chainName: YIELD_CHAINS[chainId].name,
+                protocol: "aave-v3",
+                depositedAmount: aToken.toString(),
+                currentApy: pool?.apyTotal ?? 0,
+                depositTimestamp: Date.now(),
+              };
+              addLog({ timestamp: Date.now(), level: "INFO", message: `Detected existing Aave position: ${(Number(aToken) / 1e6).toFixed(4)} aUSDC on ${YIELD_CHAINS[chainId].name}` });
+              break;
+            }
+          } catch { /* skip chain */ }
+        }
+      }
+
       // Check if move needed
       const currentApy = state.currentPosition?.currentApy ?? 0;
       const currentChainId = state.currentPosition?.chainId ?? null;
-
-      // Always consult LLM — it decides whether to move even below the threshold
 
       // ── GET REAL BRIDGE QUOTE for LLM context ──
       // Lightweight fetchQuoteCost — no eth_call, just getQuote for cost data

@@ -43,7 +43,7 @@ export async function getYieldDecision(
             {
               role: "system",
               content:
-                "You are an autonomous DeFi yield optimizer managing USDC across L2 chains. Decide whether to move capital to a higher-yielding chain. Respond ONLY with valid JSON. STRICT RULE: Base (chainId 8453) is always preferred over Polygon (chainId 137). If currently on Polygon, you MUST move to Base if Base APY is within 2% of Polygon APY (e.g. Polygon 5%, Base 3.5% → MOVE to Base). Only stay on Polygon if Base APY is more than 2% lower. Never choose Polygon over Base when the difference is 2% or less.",
+                "You are an autonomous DeFi yield optimizer managing USDC across L2 chains. Decide whether to move capital to the highest-yielding Aave V3 USDC pool. Respond ONLY with valid JSON.",
             },
             {
               role: "user",
@@ -73,19 +73,6 @@ Respond with: {"action":"MOVE|STAY|WITHDRAW","targetChainId":number,"reason":"on
     const parsed = JSON.parse(content) as YieldLLMDecision;
     if (!["MOVE", "STAY", "WITHDRAW"].includes(parsed.action)) {
       return fallback(currentPosition, yields);
-    }
-
-    // Hard override: if on Polygon and LLM said STAY, but Base is within 2% APY → force MOVE to Base
-    if (parsed.action === "STAY" && currentPosition?.chainId === 137) {
-      const base = yields.find((y) => y.actionable && y.chainId === 8453);
-      if (base && currentPosition.currentApy - base.apyTotal <= 2.0) {
-        return {
-          action: "MOVE",
-          targetChainId: 8453,
-          reason: `Overriding to Base — preferred chain within 2% APY tolerance (Base: ${base.apyTotal.toFixed(2)}%)`,
-          confidence: 95,
-        };
-      }
     }
 
     return parsed;
@@ -122,16 +109,6 @@ function fallback(
   }
 
   const diff = best.apyTotal - currentPosition.currentApy;
-
-  // Move off Polygon to Base if Base APY is within 2% of Polygon APY
-  if (currentPosition.chainId === 137 && best.chainId !== 137) {
-    return {
-      action: "MOVE",
-      targetChainId: best.chainId,
-      reason: `Moving from Polygon to ${best.chain} (${best.apyTotal.toFixed(2)}% APY) — Base preferred within 2% tolerance`,
-      confidence: 90,
-    };
-  }
 
   if (best.chainId !== currentPosition.chainId && diff >= MIN_APY_DIFF_TO_MOVE) {
     return {
