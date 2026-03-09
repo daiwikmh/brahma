@@ -7,7 +7,8 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { mainnet, base, arbitrum, optimism, polygon } from "viem/chains";
-import { createConfig, EVM, getRoutes, executeRoute } from "@lifi/sdk";
+import { getRoutes, executeRoute } from "@lifi/sdk";
+import { initLiFi } from "./lifiClient";
 import {
   NONFUNGIBLE_POSITION_MANAGER_ABI,
   POSITION_MANAGER_ADDRESS,
@@ -67,25 +68,8 @@ export class EvacuationExecutor {
         }) as PublicClient)
       : null;
 
-    // Configure LI.FI SDK with this wallet
-    createConfig({
-      integrator: process.env.LIFI_INTEGRATOR || "adios",
-      providers: [
-        EVM({
-          getWalletClient: async () => this.walletClient,
-          switchChain: async (targetChainId: number) => {
-            const targetChain = CHAIN_MAP[targetChainId];
-            if (!targetChain)
-              throw new Error(`Unsupported chain: ${targetChainId}`);
-            return createWalletClient({
-              account,
-              chain: targetChain,
-              transport: http(), // public RPC on destination
-            });
-          },
-        }),
-      ],
-    });
+    // Configure LI.FI SDK (shared singleton)
+    initLiFi(privateKey, chainId, rpcUrl);
 
     this.onLog = onLog ?? (() => {});
   }

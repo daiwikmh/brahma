@@ -78,3 +78,74 @@ export type ChainConfig = {
   explorerUrl: string;
   nativeCurrency: { name: string; symbol: string; decimals: number };
 };
+
+// ─── Yield Hunting Types ───
+
+export interface YieldPool {
+  chain: string;
+  chainId: number;
+  project: string;
+  projectLabel: string; // human-readable protocol name
+  symbol: string;
+  tvlUsd: number;
+  apy: number;
+  apyReward: number;
+  apyTotal: number;
+  actionable: boolean; // true = agent can deposit here (Aave V3)
+}
+
+export interface YieldPosition {
+  chainId: number;
+  chainName: string;
+  aavePool: string;
+  depositedAmount: string;
+  currentApy: number;
+  depositTxHash?: string;
+  depositTimestamp: number;
+}
+
+export type YieldAgentStatus =
+  | "IDLE"
+  | "SCANNING"
+  | "DECIDING"
+  | "WITHDRAWING"
+  | "BRIDGING"
+  | "DEPOSITING"
+  | "MONITORING"
+  | "ERROR"
+  | "PAUSED";
+
+export interface YieldAgentState {
+  status: YieldAgentStatus;
+  mode: "DRY_RUN" | "LIVE";
+  currentPosition: YieldPosition | null;
+  lastScan: number;
+  lastYields: YieldPool[];
+  bestYield: YieldPool | null;
+  logs: LogEntry[];
+  uptime: number;
+  scansPerformed: number;
+  movesPerformed: number;
+  moveHistory: YieldMoveResult[];
+}
+
+export interface YieldMoveResult {
+  success: boolean;
+  fromChain: number;
+  toChain: number;
+  amountMoved: string;
+  bridgeRoute?: BridgeRoute;
+  depositTxHash?: string;
+  withdrawTxHash?: string;
+  newApy: number;
+  timestamp: number;
+  error?: string;
+  dryRun: boolean;
+}
+
+export interface YieldLLMDecision {
+  action: "MOVE" | "STAY" | "WITHDRAW";
+  targetChainId: number;
+  reason: string;
+  confidence: number;
+}

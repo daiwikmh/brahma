@@ -624,7 +624,226 @@ body {
   color: var(--danger);
 }
 
+/* ─── NEON + JAPANESE ─── */
+
+:root {
+  --neon-cyan: #00FFE0;
+  --neon-pink: #FF2D78;
+  --neon-purple: #BF5AF2;
+  --neon-cyan-dim: rgba(0,255,224,0.5);
+  --neon-cyan-muted: rgba(0,255,224,0.15);
+  --neon-cyan-ghost: rgba(0,255,224,0.06);
+  --neon-pink-ghost: rgba(255,45,120,0.06);
+  --neon-pink-muted: rgba(255,45,120,0.15);
+}
+
+.val-neon { color: var(--neon-cyan); }
+
+/* ── Mode tabs ── */
+.mode-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.mode-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+}
+.mode-tab:hover { background: rgba(255,255,255,0.02); color: var(--text-secondary); }
+.mode-tab.active-guardian {
+  color: var(--accent);
+  background: var(--accent-ghost);
+  border-color: var(--accent-muted);
+}
+.mode-tab.active-yield {
+  color: var(--neon-cyan);
+  background: var(--neon-cyan-ghost);
+  border-color: var(--neon-cyan-muted);
+}
+.mode-tab svg { width: 14px; height: 14px; }
+
+/* ── Japanese label ── */
+.jp-label {
+  font-size: 8px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+.jp-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  margin: 0.5rem 0;
+}
+
+/* ── Yield table ── */
+.yield-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 4px;
+}
+.yield-table th {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.yield-table td {
+  padding: 0.75rem;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.yield-row {
+  background: var(--bg-base);
+  transition: all 0.2s;
+}
+.yield-row:hover { background: rgba(255,255,255,0.02); }
+.yield-row td:first-child { border-radius: 8px 0 0 8px; }
+.yield-row td:last-child { border-radius: 0 8px 8px 0; }
+.yield-row.current {
+  border: 1px solid var(--accent-muted);
+  background: var(--accent-ghost);
+}
+.yield-row.best {
+  border: 1px solid var(--neon-cyan-muted);
+  background: var(--neon-cyan-ghost);
+  box-shadow: 0 0 16px rgba(0,255,224,0.06);
+}
+.yield-row.view-only td { opacity: 0.5; }
+.yield-row.view-only:hover td { opacity: 0.72; }
+.yield-apy {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 16px;
+}
+.yield-apy.neon {
+  color: var(--neon-cyan);
+  text-shadow: 0 0 12px rgba(0,255,224,0.3);
+}
+.yield-chain-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.yield-tag {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.yield-tag.current {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+.yield-tag.best {
+  background: var(--neon-cyan-muted);
+  color: var(--neon-cyan);
+}
+
+/* ── Dry run / Live banners ── */
+.mode-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.mode-banner.dry-run {
+  background: var(--neon-pink-ghost);
+  border: 1px solid var(--neon-pink-muted);
+  color: var(--neon-pink);
+}
+.mode-banner.live-mode {
+  background: var(--neon-cyan-ghost);
+  border: 1px solid var(--neon-cyan-muted);
+  color: var(--neon-cyan);
+}
+
+/* ── Neon buttons ── */
+.btn-neon {
+  background: var(--neon-cyan-ghost);
+  border: 1px solid var(--neon-cyan-muted);
+  color: var(--neon-cyan);
+}
+.btn-neon:hover {
+  background: var(--neon-cyan-muted);
+  box-shadow: 0 0 16px rgba(0,255,224,0.12);
+}
+.btn-neon-pink {
+  background: var(--neon-pink-ghost);
+  border: 1px solid var(--neon-pink-muted);
+  color: var(--neon-pink);
+}
+.btn-neon-pink:hover { background: var(--neon-pink-muted); }
+
+/* ── Yield nav item active ── */
+.nav-item.active-yield {
+  color: var(--neon-cyan);
+  background: var(--neon-cyan-ghost);
+  border-color: var(--neon-cyan-muted);
+}
+
+/* ── Neon stat card ── */
+.stat-card.glow-neon { box-shadow: 0 0 20px rgba(0,255,224,0.08); }
+
+/* ── Neon log badge ── */
+.log-badge.info-neon { color: var(--neon-cyan); background: var(--neon-cyan-ghost); }
+
+/* ── Yield move history ── */
+.move-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  border-radius: 10px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+}
+.move-row.dry-run { border-color: var(--neon-pink-muted); border-style: dashed; }
+
+/* ── Seal stamp (Japanese hanko) ── */
+.hanko {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--neon-pink);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700;
+  color: var(--neon-pink);
+  transform: rotate(-12deg);
+  opacity: 0.7;
+}
+
+/* ── Status dot neon ── */
+.status-dot.scanning { background: var(--neon-cyan); animation: pulse 1.5s infinite; }
+.status-dot.bridging { background: var(--neon-purple); animation: pulse 1s infinite; }
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+@keyframes neon-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(0,255,224,0.2); }
+  50% { box-shadow: 0 0 20px rgba(0,255,224,0.4); }
 }

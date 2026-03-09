@@ -96,3 +96,60 @@ export const DEFAULT_POOL_ADDRESS =
 
 export const DEFAULT_RISK_THRESHOLD = 500;
 export const DEFAULT_POLL_INTERVAL = 60_000;
+
+// ─── Yield Hunting Config ───
+
+export const YIELD_CHAINS: Record<
+  number,
+  {
+    chainId: number;
+    name: string;
+    usdc: `0x${string}`;
+    aavePool: `0x${string}`;
+    aToken: `0x${string}`; // aUSDC (aBaseUSDC, aArbUSDCn, etc.)
+    rpcUrl: string;
+  }
+> = {
+  8453: {
+    chainId: 8453,
+    name: "Base",
+    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    aavePool: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
+    aToken: "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB", // aBasUSDC
+    rpcUrl: process.env.RPC_URL || "https://mainnet.base.org",
+  },
+  42161: {
+    chainId: 42161,
+    name: "Arbitrum",
+    usdc: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    aavePool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    aToken: "0x724dc807b04555b71ed48a6896b6F41593b8C637", // aArbUSDCn
+    rpcUrl: "https://arb-mainnet.g.alchemy.com/v2/9elNFLtsKnZj21x7IiwjX",
+  },
+  10: {
+    chainId: 10,
+    name: "Optimism",
+    usdc: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    aavePool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    aToken: "0x38d693cE1dF5AaDF7bC62043aE5EF4e45a3d37Bd", // aOptUSDC
+    rpcUrl: "https://mainnet.optimism.io",
+  },
+  137: {
+    chainId: 137,
+    name: "Polygon",
+    usdc: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", // native USDC on Polygon
+    aavePool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    aToken: "0xA4D94019934D8333Ef880ABFFbF2FDd611C762BD", // aPolUSDC
+    rpcUrl: "https://polygon-rpc.com",
+  },
+};
+
+export const DEFI_LLAMA_CHAIN_MAP: Record<number, string> = {
+  8453: "Base",
+  42161: "Arbitrum",
+  10: "Optimism",
+  137: "Polygon",
+};
+
+export const DEFAULT_YIELD_POLL_INTERVAL = 120_000; // 2 min
+export const MIN_APY_DIFF_TO_MOVE = 0.1; // 0.1% APY diff threshold — sensitive for demo
