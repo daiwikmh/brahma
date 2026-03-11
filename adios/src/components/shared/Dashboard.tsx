@@ -59,6 +59,10 @@ export default function Dashboard() {
   const [simulationMode, setSimulationMode] = useState<"DRY_RUN" | "LIVE">("DRY_RUN");
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [bootstrapYields, setBootstrapYields] = useState<YieldAgentState["lastYields"]>([]);
+  const [yieldsLoading, setYieldsLoading] = useState(true);
+  const [yieldsError, setYieldsError] = useState<string | null>(null);
 
   const handleSimulationModeChange = useCallback(
     async (newMode: "DRY_RUN" | "LIVE") => {
@@ -103,6 +107,23 @@ export default function Dashboard() {
     };
   }, [mode]);
 
+  // Pre-load yield scanner data on mount so the table shows without needing the agent running
+  useEffect(() => {
+    setYieldsLoading(true);
+    setYieldsError(null);
+    fetch("/api/yields")
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
+        return data;
+      })
+      .then((data) => {
+        if (data?.pools?.length) setBootstrapYields(data.pools);
+      })
+      .catch((err) => setYieldsError(err.message ?? "Failed to fetch yields"))
+      .finally(() => setYieldsLoading(false));
+  }, []);
+
   const handleGuardianAction = useCallback(
     async (action: string, data?: Record<string, unknown>) => {
       try {
@@ -120,14 +141,19 @@ export default function Dashboard() {
 
   const handleYieldAction = useCallback(
     async (action: string, data?: Record<string, unknown>) => {
+      setActionError(null);
       try {
-        await fetch("/api/yield-agent", {
+        const res = await fetch("/api/yield-agent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action, ...data }),
         });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setActionError(body.error ?? `Request failed (${res.status})`);
+        }
       } catch (err) {
-        console.error("Action failed:", err);
+        setActionError(err instanceof Error ? err.message : "Network error");
       }
     },
     []
@@ -183,11 +209,21 @@ export default function Dashboard() {
           </div>
         </header>
 
+        {actionError && (
+          <div
+            className="mx-6 mt-3 px-4 py-2 text-sm font-mono flex items-center justify-between"
+            style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", color: "#ef4444", borderRadius: 6 }}
+          >
+            <span>{actionError}</span>
+            <button onClick={() => setActionError(null)} style={{ opacity: 0.6, marginLeft: 12 }}>✕</button>
+          </div>
+        )}
+
         <div className="p-6 space-y-4">
           {isYield ? (
             <>
               <YieldStatsCards state={yieldState} />
-              <YieldTable state={yieldState} />
+              <YieldTable state={yieldState} bootstrapYields={bootstrapYields} yieldsLoading={yieldsLoading} yieldsError={yieldsError} />
               <div className="grid grid-cols-3 gap-4">
                 <YieldControlPanel state={yieldState} onAction={handleYieldAction} />
                 <div className="col-span-2">

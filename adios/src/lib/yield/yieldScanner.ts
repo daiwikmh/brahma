@@ -52,16 +52,19 @@ export async function scanYields(): Promise<YieldPool[]> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       res = await fetch(DEFI_LLAMA_URL, {
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(45000),
+        cache: "no-store",
       });
       if (res.ok) break;
     } catch (e) {
+      console.warn(`[yieldScanner] attempt ${attempt + 1} failed:`, e);
       if (attempt === 1) throw e;
-      // First attempt failed — retry once
     }
   }
 
-  if (!res || !res.ok) throw new Error(`DeFiLlama API ${res?.status ?? "timeout"}`);
+  if (!res || !res.ok) {
+    throw new Error(`DeFiLlama API ${res?.status ?? "timeout"}`);
+  }
 
   const json = await res.json();
   const pools: YieldPool[] = [];

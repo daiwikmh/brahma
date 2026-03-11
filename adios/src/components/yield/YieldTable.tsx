@@ -3,8 +3,18 @@
 import { useState } from "react";
 import type { YieldPool, YieldAgentState } from "@/types";
 
-export default function YieldTable({ state }: { state: YieldAgentState }) {
-  const yields = state.lastYields;
+export default function YieldTable({
+  state,
+  bootstrapYields = [],
+  yieldsLoading = false,
+  yieldsError = null,
+}: {
+  state: YieldAgentState;
+  bootstrapYields?: YieldPool[];
+  yieldsLoading?: boolean;
+  yieldsError?: string | null;
+}) {
+  const yields = state.lastYields.length > 0 ? state.lastYields : bootstrapYields;
   const currentChainId = state.currentPosition?.chainId;
   const currentProject = state.currentPosition ? "aave-v3" : null;
   const bestYield = state.bestYield;
@@ -62,7 +72,13 @@ export default function YieldTable({ state }: { state: YieldAgentState }) {
           <div className="jp-divider" style={{ marginBottom: 12 }} />
 
           {yields.length === 0 ? (
-            <div className="evac-empty">Start agent to scan yields across chains</div>
+            <div className="evac-empty">
+              {yieldsError
+                ? `⚠ ${yieldsError}`
+                : yieldsLoading
+                ? "Fetching yields from DeFiLlama…"
+                : "No yield data available"}
+            </div>
           ) : (
             <table className="yield-table">
               <thead>
