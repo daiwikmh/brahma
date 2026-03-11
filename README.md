@@ -1,8 +1,10 @@
 # BRAHMA
 
-> **brahma watches your USDC across chains 24/7, finds the best Aave V3 yield, and moves your funds there automatically using LI.FI bridges — no clicks required.**
+> **Brahma watches your USDC across chains 24/7, finds the best Aave V3 yield, and moves your funds there automatically using LI.FI bridges — no clicks required.**
 
 An autonomous DeFi operations system built for the **LI.FI**. Two fully autonomous strategies from a single dashboard: a cross-chain USDC Yielder powered by Aave V3 + Compound V3 + LI.FI, and an LP Guardian that watches Uniswap V3 positions and evacuates liquidity when risk thresholds are breached.
+
+Refer [Video Explanation of Brahman](https://x.com/daiwik_mhi/status/2031030761244315967?s=20)
 
 ---
 
