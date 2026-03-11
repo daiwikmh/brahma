@@ -4,7 +4,7 @@
 
 An autonomous DeFi operations system built for the **LI.FI**. Two fully autonomous strategies from a single dashboard: a cross-chain USDC Yielder powered by Aave V3 + Compound V3 + LI.FI, and an LP Guardian that watches Uniswap V3 positions and evacuates liquidity when risk thresholds are breached.
 
-Refer [Video Explanation of Brahman](https://x.com/daiwik_mhi/status/2031030761244315967?s=20)
+Refer [Video Explanation of Brahma](https://x.com/daiwik_mhi/status/2031030761244315967?s=20)
 
 ---
 
